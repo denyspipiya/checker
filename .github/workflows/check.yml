@@ -15,8 +15,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-          cache: pip
-      - run: pip install -r requirements.txt
+      - run: pip install playwright requests
       - run: python check.py
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
