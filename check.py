@@ -18,8 +18,9 @@ def month_index(text):
     return d.year * 12 + d.month
 
 with sync_playwright() as p:
-    b = p.chromium.launch()
+    b = p.chromium.launch(channel="chrome")
     page = b.new_page(viewport={"width": 420, "height": 900})
+    page.set_default_timeout(30000)
     page.goto(URL, wait_until="networkidle")
     try:
         page.get_by_label("Yes").check()
@@ -30,7 +31,6 @@ with sync_playwright() as p:
     page.get_by_text("Select a date and time").wait_for()
     page.wait_for_timeout(1500)
 
-    # Move the calendar to the target month
     header = page.get_by_text(re.compile(r"^[A-Z][a-z]+ 20\d\d$")).first
     row = header.locator("xpath=ancestor::*[.//button][1]")
     arrows = row.locator("button").filter(has_not_text=re.compile(r"^\d{1,2}$"))
@@ -39,9 +39,9 @@ with sync_playwright() as p:
         if current == TARGET:
             break
         if month_index(current) < month_index(TARGET):
-            arrows.last.click()    # next month
+            arrows.last.click()
         else:
-            arrows.first.click()   # previous month
+            arrows.first.click()
         page.wait_for_timeout(700)
     if header.inner_text().strip() != TARGET:
         raise RuntimeError("Could not reach " + TARGET)
