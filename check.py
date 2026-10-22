@@ -5,7 +5,7 @@ from playwright.sync_api import sync_playwright
 
 URL = "https://phlebotomy.bookinglab.co.uk/barnsleyhospital/37001/services"
 TOPIC = os.environ["NTFY_TOPIC"]
-TARGET = "November 2026"   # test month. Change to "October 2026" after the test
+TARGET = "October 2026"
 
 t = datetime.strptime(TARGET, "%B %Y")
 EXPECTED_DAYS = calendar.monthrange(t.year, t.month)[1]
@@ -23,7 +23,7 @@ def month_index(text):
     return d.year * 12 + d.month
 
 
-print("SCRIPT VERSION: v3 | Target:", TARGET)
+print("SCRIPT VERSION: v4 | Target:", TARGET)
 
 with sync_playwright() as p:
     b = p.chromium.launch(channel="chrome")
@@ -66,21 +66,14 @@ with sync_playwright() as p:
     print("Day buttons found:", len(days), "| expected:", EXPECTED_DAYS)
     if len(days) != EXPECTED_DAYS:
         raise RuntimeError("Calendar does not match " + TARGET)
-
-    body = page.inner_text("body")
     b.close()
 
 open_days = [x["d"] for x in days if not is_grey(x["bg"])]
-m = re.search(r"Available times on \w+ (\d{1,2}) (\w+) (\d{4})", body)
-earliest_in_target = bool(m and m.group(2) == TARGET.split()[0])
-
-i = body.find("Available")
-print("Text near 'Available':", repr(body[i:i + 120]) if i >= 0 else "not found")
 print("Colours seen:", Counter(x["bg"] for x in days))
-print("Open days:", open_days, "| earliest heading:", m.group(0) if m else None)
+print("Open days:", open_days)
 
-if open_days or earliest_in_target:
-    msg = f"{TARGET} slots open: " + (", ".join(open_days) or m.group(0))
+if open_days:
+    msg = f"{TARGET} slots open on: " + ", ".join(open_days)
     r = requests.post(f"https://ntfy.sh/{TOPIC}", data=msg,
                       headers={"Title": "Blood test slot!", "Priority": "high", "Click": URL})
     print("ntfy response:", r.status_code)
