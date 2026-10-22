@@ -18,24 +18,4 @@ jobs:
       - run: pip install playwright requests
       - run: python check.py
         env:
-          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}name: check
-on:
-  schedule:
-    - cron: "*/5 * * * *"
-  workflow_dispatch:
-concurrency:
-  group: check
-  cancel-in-progress: true
-jobs:
-  run:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-      - run: pip install playwright requests
-      - run: python check.py
-        env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
