@@ -4,7 +4,7 @@ from playwright.sync_api import sync_playwright
 
 URL = "https://phlebotomy.bookinglab.co.uk/barnsleyhospital/37001/services"
 TOPIC = os.environ["NTFY_TOPIC"]
-TARGET = "October 2026"
+TARGET = "November 2026"
 
 def is_grey(bg):
     nums = [int(n) for n in re.findall(r"\d+", bg)[:3]]
