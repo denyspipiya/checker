@@ -123,5 +123,34 @@ def check_once():
         label = datetime(t.year, t.month, int(d)).strftime("%a %d")
         times = results.get(d)
         if times:
-            shown = ", ".join(times[:12])
-            if len(times) > 12:
+            shown = ", ".join(times[:12]) + (f" (+{len(times) - 12} more)" if len(times) > 12 else "")
+            lines.append(f"{label}: {shown}")
+        elif d in results:
+            lines.append(f"{label}: open (times not read)")
+        else:
+            lines.append(f"{label}: open")
+    notify("Blood test slot!", f"{TARGET} slots available:\n" + "\n".join(lines))
+
+
+print("SCRIPT VERSION: v8 loop 5min | Target:", TARGET, flush=True)
+start = time.time()
+n = 0
+fails = 0
+while True:
+    n += 1
+    print(f"--- check #{n} at {datetime.now(timezone.utc):%H:%M:%S} UTC ---", flush=True)
+    try:
+        check_once()
+        fails = 0
+    except Exception:
+        traceback.print_exc()
+        fails += 1
+        if fails == 3:
+            try:
+                notify("Checker problem", "The blood test checker failed 3 times in a row.", "default")
+            except Exception:
+                pass
+    if time.time() - start + INTERVAL_SECONDS > RUN_SECONDS:
+        break
+    time.sleep(INTERVAL_SECONDS)
+print("Run finished, next run takes over", flush=True)
