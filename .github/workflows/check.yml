@@ -1,15 +1,15 @@
 name: check
 on:
   schedule:
-    - cron: "3-58/5 * * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
 concurrency:
   group: check
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
