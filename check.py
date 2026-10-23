@@ -7,7 +7,7 @@ URL = "https://phlebotomy.bookinglab.co.uk/barnsleyhospital/37001/services"
 TOPIC = os.environ["NTFY_TOPIC"]
 TARGET = "October 2026"
 MAX_DAYS_TO_READ = 8
-INTERVAL_SECONDS = 10 * 60      # check every 10 minutes
+INTERVAL_SECONDS = 5 * 60       # check every 5 minutes
 RUN_SECONDS = 330 * 60          # each run lasts about 5.5 hours
 TIME_RE = re.compile(r"\b\d{1,2}[:.]\d{2}\s?(?:[ap]m)?\b", re.I)
 
@@ -134,7 +134,7 @@ def check_once():
     notify("Blood test slot!", f"{TARGET} slots available:\n" + "\n".join(lines))
 
 
-print("SCRIPT VERSION: v6 loop | Target:", TARGET, flush=True)
+print("SCRIPT VERSION: v6 loop 5min | Target:", TARGET, flush=True)
 start = time.time()
 n = 0
 fails = 0
