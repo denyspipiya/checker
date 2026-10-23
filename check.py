@@ -1,12 +1,14 @@
-import os, re, calendar, requests
+import os, re, time, calendar, traceback, requests
 from datetime import datetime
 from collections import Counter
 from playwright.sync_api import sync_playwright
 
 URL = "https://phlebotomy.bookinglab.co.uk/barnsleyhospital/37001/services"
 TOPIC = os.environ["NTFY_TOPIC"]
-TARGET = "October 2026"      # set to "November 2026" to test the times reading
-MAX_DAYS_TO_READ = 8         # max open days to click and read times for
+TARGET = "October 2026"
+MAX_DAYS_TO_READ = 8
+INTERVAL_SECONDS = 10 * 60      # check every 10 minutes
+RUN_SECONDS = 330 * 60          # each run lasts about 5.5 hours
 TIME_RE = re.compile(r"\b\d{1,2}[:.]\d{2}\s?(?:[ap]m)?\b", re.I)
 
 t = datetime.strptime(TARGET, "%B %Y")
@@ -29,7 +31,7 @@ def read_times(page):
     body = page.inner_text("body")
     m = re.search(r"Available times on ([^\n]+)\n", body)
     if not m:
-        return None, [], ""
+        return []
     section = body[m.end():]
     cut = section.find("Accessibility statement")
     if cut != -1:
@@ -39,81 +41,83 @@ def read_times(page):
         x = x.strip()
         if x not in times:
             times.append(x)
-    return m.group(1).strip(), times, section.strip()
+    return times
 
 
-print("SCRIPT VERSION: v5 | Target:", TARGET)
+def notify(title, text, priority="high"):
+    r = requests.post(f"https://ntfy.sh/{TOPIC}", data=text.encode("utf-8"),
+                      headers={"Title": title, "Priority": priority, "Click": URL})
+    print("ntfy response:", r.status_code, flush=True)
 
-results = {}
-with sync_playwright() as p:
-    b = p.chromium.launch(channel="chrome")
-    page = b.new_page(viewport={"width": 420, "height": 900})
-    page.set_default_timeout(30000)
-    page.goto(URL, wait_until="networkidle")
-    try:
-        page.get_by_label("Yes").check()
-    except Exception:
-        pass
-    page.get_by_role("link", name=re.compile("Phlebotomy Booking Service", re.I)).click()
-    page.get_by_role("link", name=re.compile("Community Diagnostic Centre", re.I)).first.click()
-    page.get_by_text("Select a date and time").wait_for()
-    page.wait_for_timeout(1500)
 
-    header = page.get_by_text(re.compile(r"^[A-Z][a-z]+ 20\d\d$")).first
-    row = header.locator("xpath=ancestor::*[.//button][1]")
-    arrows = row.locator("button").filter(has_not_text=re.compile(r"^\d{1,2}$"))
-    for _ in range(6):
-        current = header.inner_text().strip()
-        if current == TARGET:
-            break
-        if month_index(current) < month_index(TARGET):
-            arrows.last.click()
-        else:
-            arrows.first.click()
-        page.wait_for_timeout(1000)
-    print("Calendar header shows:", header.inner_text().strip())
-    if header.inner_text().strip() != TARGET:
-        raise RuntimeError("Could not reach " + TARGET)
-
-    days = []
-    for _ in range(10):
-        days = page.evaluate(r"""() => [...document.querySelectorAll('button')]
-          .filter(x => /^\d{1,2}$/.test(x.innerText.trim()))
-          .map(x => ({d: x.innerText.trim(), bg: getComputedStyle(x).backgroundColor}))""")
-        if len(days) == EXPECTED_DAYS:
-            break
-        page.wait_for_timeout(500)
-    print("Day buttons found:", len(days), "| expected:", EXPECTED_DAYS)
-    if len(days) != EXPECTED_DAYS:
-        raise RuntimeError("Calendar does not match " + TARGET)
-
-    print("Colours seen:", Counter(x["bg"] for x in days))
-    open_idx = [i for i, x in enumerate(days) if not is_grey(x["bg"])]
-    print("Open days:", [days[i]["d"] for i in open_idx])
-
-    # Click each open day and read its available times
-    day_btns = page.locator("button").filter(has_text=re.compile(r"^\d{1,2}$"))
-    for n, i in enumerate(open_idx[:MAX_DAYS_TO_READ]):
-        d = days[i]["d"]
+def check_once():
+    results = {}
+    with sync_playwright() as p:
+        b = p.chromium.launch(channel="chrome")
         try:
-            btn = day_btns.nth(i)
-            if btn.inner_text().strip() != d:
-                raise RuntimeError("button order mismatch")
-            btn.click()
+            page = b.new_page(viewport={"width": 420, "height": 900})
+            page.set_default_timeout(30000)
+            page.goto(URL, wait_until="networkidle")
+            try:
+                page.get_by_label("Yes").check()
+            except Exception:
+                pass
+            page.get_by_role("link", name=re.compile("Phlebotomy Booking Service", re.I)).click()
+            page.get_by_role("link", name=re.compile("Community Diagnostic Centre", re.I)).first.click()
+            page.get_by_text("Select a date and time").wait_for()
             page.wait_for_timeout(1500)
-            heading, times, section = read_times(page)
-            results[d] = times
-            print(f"Day {d}: heading={heading!r} times={times}")
-            if n == 0:
-                print("Raw text under heading (first 300 chars):", repr(section[:300]))
-        except Exception as e:
-            results[d] = None
-            print(f"Day {d}: could not read times ({e})")
-    b.close()
 
-open_days = [days[i]["d"] for i in open_idx]
+            header = page.get_by_text(re.compile(r"^[A-Z][a-z]+ 20\d\d$")).first
+            row = header.locator("xpath=ancestor::*[.//button][1]")
+            arrows = row.locator("button").filter(has_not_text=re.compile(r"^\d{1,2}$"))
+            for _ in range(6):
+                current = header.inner_text().strip()
+                if current == TARGET:
+                    break
+                if month_index(current) < month_index(TARGET):
+                    arrows.last.click()
+                else:
+                    arrows.first.click()
+                page.wait_for_timeout(1000)
+            if header.inner_text().strip() != TARGET:
+                raise RuntimeError("Could not reach " + TARGET)
 
-if open_days:
+            days = []
+            for _ in range(10):
+                days = page.evaluate(r"""() => [...document.querySelectorAll('button')]
+                  .filter(x => /^\d{1,2}$/.test(x.innerText.trim()))
+                  .map(x => ({d: x.innerText.trim(), bg: getComputedStyle(x).backgroundColor}))""")
+                if len(days) == EXPECTED_DAYS:
+                    break
+                page.wait_for_timeout(500)
+            if len(days) != EXPECTED_DAYS:
+                raise RuntimeError("Calendar does not match " + TARGET)
+
+            print("Colours seen:", dict(Counter(x["bg"] for x in days)), flush=True)
+            open_idx = [i for i, x in enumerate(days) if not is_grey(x["bg"])]
+            print("Open days:", [days[i]["d"] for i in open_idx], flush=True)
+
+            day_btns = page.locator("button").filter(has_text=re.compile(r"^\d{1,2}$"))
+            for i in open_idx[:MAX_DAYS_TO_READ]:
+                d = days[i]["d"]
+                try:
+                    btn = day_btns.nth(i)
+                    if btn.inner_text().strip() != d:
+                        raise RuntimeError("button order mismatch")
+                    btn.click()
+                    page.wait_for_timeout(1500)
+                    results[d] = read_times(page)
+                    print(f"Day {d}: times={results[d]}", flush=True)
+                except Exception as e:
+                    results[d] = None
+                    print(f"Day {d}: could not read times ({e})", flush=True)
+        finally:
+            b.close()
+
+    open_days = [days[i]["d"] for i in open_idx]
+    if not open_days:
+        print("No open days, no alert sent", flush=True)
+        return
     lines = []
     for d in open_days:
         label = datetime(t.year, t.month, int(d)).strftime("%a %d")
@@ -127,9 +131,28 @@ if open_days:
             lines.append(f"{label}: open (times not read)")
         else:
             lines.append(f"{label}: open")
-    msg = f"{TARGET} slots available:\n" + "\n".join(lines)
-    r = requests.post(f"https://ntfy.sh/{TOPIC}", data=msg.encode("utf-8"),
-                      headers={"Title": "Blood test slot!", "Priority": "high", "Click": URL})
-    print("ntfy response:", r.status_code)
-else:
-    print("No open days, no alert sent")
+    notify("Blood test slot!", f"{TARGET} slots available:\n" + "\n".join(lines))
+
+
+print("SCRIPT VERSION: v6 loop | Target:", TARGET, flush=True)
+start = time.time()
+n = 0
+fails = 0
+while True:
+    n += 1
+    print(f"--- check #{n} at {datetime.utcnow():%H:%M:%S} UTC ---", flush=True)
+    try:
+        check_once()
+        fails = 0
+    except Exception:
+        traceback.print_exc()
+        fails += 1
+        if fails == 3:
+            try:
+                notify("Checker problem", "The blood test checker failed 3 times in a row.", "default")
+            except Exception:
+                pass
+    if time.time() - start + INTERVAL_SECONDS > RUN_SECONDS:
+        break
+    time.sleep(INTERVAL_SECONDS)
+print("Run finished, next run takes over", flush=True)
