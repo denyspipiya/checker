@@ -1,5 +1,5 @@
 import os, re, time, calendar, traceback, requests
-from datetime import datetime
+from datetime import datetime, timezone
 from collections import Counter
 from playwright.sync_api import sync_playwright
 
@@ -125,34 +125,3 @@ def check_once():
         if times:
             shown = ", ".join(times[:12])
             if len(times) > 12:
-                shown += f" (+{len(times) - 12} more)"
-            lines.append(f"{label}: {shown}")
-        elif d in results:
-            lines.append(f"{label}: open (times not read)")
-        else:
-            lines.append(f"{label}: open")
-    notify("Blood test slot!", f"{TARGET} slots available:\n" + "\n".join(lines))
-
-
-print("SCRIPT VERSION: v6 loop 5min | Target:", TARGET, flush=True)
-start = time.time()
-n = 0
-fails = 0
-while True:
-    n += 1
-    print(f"--- check #{n} at {datetime.utcnow():%H:%M:%S} UTC ---", flush=True)
-    try:
-        check_once()
-        fails = 0
-    except Exception:
-        traceback.print_exc()
-        fails += 1
-        if fails == 3:
-            try:
-                notify("Checker problem", "The blood test checker failed 3 times in a row.", "default")
-            except Exception:
-                pass
-    if time.time() - start + INTERVAL_SECONDS > RUN_SECONDS:
-        break
-    time.sleep(INTERVAL_SECONDS)
-print("Run finished, next run takes over", flush=True)
