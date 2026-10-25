@@ -9,7 +9,7 @@ TARGET = "October 2026"
 MAX_DAYS_TO_READ = 8
 INTERVAL_SECONDS = 5 * 60       # check every 5 minutes
 RUN_SECONDS = 330 * 60          # each run lasts about 5.5 hours
-TIME_RE = re.compile(r"\b\d{1,2}[:.]\d{2}\s?(?:[ap]m)?\b", re.I)
+TIME_RE = re.compile(r"\b\d{1,2}[:.]\d{2}\s?(?:[ap]m)?|\b\d{1,2}\s?[ap]m\b", re.I)
 
 t = datetime.strptime(TARGET, "%B %Y")
 EXPECTED_DAYS = calendar.monthrange(t.year, t.month)[1]
@@ -27,21 +27,26 @@ def month_index(text):
     return d.year * 12 + d.month
 
 
-def read_times(page):
-    body = page.inner_text("body")
-    m = re.search(r"Available times on ([^\n]+)\n", body)
-    if not m:
-        return []
-    section = body[m.end():]
-    cut = section.find("Accessibility statement")
-    if cut != -1:
-        section = section[:cut]
-    times = []
-    for x in TIME_RE.findall(section):
-        x = x.strip()
-        if x not in times:
-            times.append(x)
-    return times
+def read_times(page, day):
+    heading_re = re.compile(rf"Available times on \w+ {day} \w+ \d{{4}}")
+    times, section = [], ""
+    for _ in range(10):
+        body = page.inner_text("body")
+        m = heading_re.search(body)
+        if m:
+            section = body[m.end():]
+            cut = section.find("Accessibility statement")
+            if cut != -1:
+                section = section[:cut]
+            times = []
+            for x in TIME_RE.findall(section):
+                x = x.strip()
+                if x not in times:
+                    times.append(x)
+            if times:
+                break
+        page.wait_for_timeout(800)
+    return times, section.strip()
 
 
 def notify(title, text, priority="high"):
@@ -106,8 +111,16 @@ def check_once():
                         raise RuntimeError("button order mismatch")
                     btn.click()
                     page.wait_for_timeout(1500)
-                    results[d] = read_times(page)
-                    print(f"Day {d}: times={results[d]}", flush=True)
+                    times, section = read_times(page, d)
+                    if not times:
+                        print(f"Day {d}: no times yet, retrying click", flush=True)
+                        btn.click()
+                        page.wait_for_timeout(2000)
+                        times, section = read_times(page, d)
+                    results[d] = times
+                    print(f"Day {d}: times={times}", flush=True)
+                    if not times:
+                        print(f"Day {d}: raw text under heading:", repr(section[:400]), flush=True)
                 except Exception as e:
                     results[d] = None
                     print(f"Day {d}: could not read times ({e})", flush=True)
@@ -132,7 +145,7 @@ def check_once():
     notify("Blood test slot!", f"{TARGET} slots available:\n" + "\n".join(lines))
 
 
-print("SCRIPT VERSION: v8 loop 5min | Target:", TARGET, flush=True)
+print("SCRIPT VERSION: v9 loop 5min | Target:", TARGET, flush=True)
 start = time.time()
 n = 0
 fails = 0
