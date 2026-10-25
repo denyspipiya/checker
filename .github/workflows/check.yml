@@ -1,8 +1,11 @@
 name: check
 on:
   schedule:
-    - cron: "17 * * * *"
+    - cron: "17 */6 * * *"
   workflow_dispatch:
+permissions:
+  contents: read
+  actions: write
 concurrency:
   group: check
   cancel-in-progress: false
@@ -19,3 +22,8 @@ jobs:
       - run: python check.py
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      - name: Start the next run
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run check.yml --ref ${{ github.ref_name }}
